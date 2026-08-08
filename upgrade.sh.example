@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$0")"
+
+BRANCH="${OMNIROUTE_DEPLOY_BRANCH:-to/main}"
+REPOSITORY="${OMNIROUTE_GITHUB_REPOSITORY:-TonisOrmisson/OmniRoute}"
+
+git fetch origin "$BRANCH"
+git checkout "$BRANCH"
+git reset --hard "origin/$BRANCH"
+
+export EXPECTED_SHA="$(git rev-parse --short HEAD)"
+
+# Prefer a published GitHub Release asset (CI-built); fall back to the
+# committed prebuilt/parts/ archive which is already in the repo.
+PREBUILT_URL=""
+if PREBUILT_URL="$(
+  curl -fsSL "https://api.github.com/repos/$REPOSITORY/releases?per_page=20" |
+    node -e '
+      let source = "";
+      process.stdin.on("data", (chunk) => (source += chunk));
+      process.stdin.on("end", () => {
+        const releases = JSON.parse(source);
+        const expectedSha = process.env.EXPECTED_SHA;
+        for (const release of releases) {
+          const asset = (release.assets || []).find(
+            (candidate) =>
+              candidate.name.startsWith("omniroute-prebuilt-") &&
+              candidate.name.endsWith(`-${expectedSha}.tar.gz`)
+          );
+          if (asset) {
+            console.log(asset.browser_download_url);
+            return;
+          }
+        }
+        process.exit(1);
+      });
+    '
+)"; then
+  echo "Installing prebuilt OmniRoute bundle from GitHub Release: $PREBUILT_URL"
+  bash scripts/install-prebuilt.sh "$PREBUILT_URL"
+elif [ -f prebuilt/omniroute-prebuilt.tar.gz.sha256 ] && \
+  ls prebuilt/parts/omniroute-prebuilt.tar.gz.part-* >/dev/null 2>&1; then
+  echo "Assembling prebuilt OmniRoute bundle from committed parts..."
+  TMP_ARCHIVE="$(mktemp)"
+  trap 'rm -f "$TMP_ARCHIVE"' EXIT
+  cat prebuilt/parts/omniroute-prebuilt.tar.gz.part-* > "$TMP_ARCHIVE"
+  bash scripts/install-prebuilt.sh "$TMP_ARCHIVE"
+else
+  echo "No OmniRoute prebuilt release asset found for commit $EXPECTED_SHA in $REPOSITORY." >&2
+  echo "No committed prebuilt/parts/ found either." >&2
+  echo "Wait for the GitHub Actions 'Build Prebuilt Standalone' workflow to finish, then retry." >&2
+  exit 1
+fi
+
+read_env_value() {
+  local name="$1"
+  if [ ! -f .env ]; then
+    return 0
+  fi
+  sed -n "s/^[[:space:]]*${name}[[:space:]]*=[[:space:]]*//p" .env |
+    head -n 1 |
+    sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//"
+}
+
+HEALTH_PORT="${OMNIROUTE_DASHBOARD_PORT:-${DASHBOARD_PORT:-}}"
+HEALTH_PORT="${HEALTH_PORT:-$(read_env_value OMNIROUTE_DASHBOARD_PORT)}"
+HEALTH_PORT="${HEALTH_PORT:-$(read_env_value DASHBOARD_PORT)}"
+HEALTH_PORT="${HEALTH_PORT:-${OMNIROUTE_PORT:-${PORT:-}}}"
+HEALTH_PORT="${HEALTH_PORT:-$(read_env_value OMNIROUTE_PORT)}"
+HEALTH_PORT="${HEALTH_PORT:-$(read_env_value PORT)}"
+HEALTH_PORT="${HEALTH_PORT:-20128}"
+
+echo "=== Health Check (gates the upgrade) ==="
+ok=0
+for attempt in $(seq 1 36); do
+  body="$(curl -sf -m 5 "http://127.0.0.1:${HEALTH_PORT}/api/monitoring/health" 2>/dev/null || true)"
+  if printf '%s' "$body" | grep -q '"status":"healthy"'; then
+    ok=1
+    echo "✅ /api/monitoring/health -> healthy (attempt $attempt)"
+    break
+  fi
+  echo "… not healthy yet (attempt $attempt/36), retrying in 5s"
+  sleep 5
+done
+
+if [ "$ok" != "1" ]; then
+  echo "❌ Health check failed — recent PM2 logs:" >&2
+  pm2 logs omniroute --lines 40 --nostream || true
+  exit 1
+fi
+
+git status --short

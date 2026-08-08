@@ -1,0 +1,128 @@
+name: Build Prebuilt Standalone
+
+on:
+  push:
+    branches:
+      - to/main
+    tags:
+      - "v*"
+      - "prebuilt-*"
+  workflow_dispatch:
+    inputs:
+      bootstrap_build:
+        description: "Build the committed prebuilt archive once for initial bootstrap"
+        required: false
+        default: false
+        type: boolean
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    timeout-minutes: 45
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || github.ref }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Select prebuilt source
+        id: prebuilt
+        shell: bash
+        run: |
+          if [ "${{ inputs.bootstrap_build }}" = "true" ]; then
+            echo "mode=bootstrap" >> "$GITHUB_OUTPUT"
+          elif [ -f prebuilt/omniroute-prebuilt.tar.gz ]; then
+            echo "mode=committed" >> "$GITHUB_OUTPUT"
+          elif [ -f prebuilt/parts/omniroute-prebuilt.tar.gz.part-00 ]; then
+            echo "mode=committed-parts" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip_release=true" >> "$GITHUB_OUTPUT"
+            echo "No committed prebuilt archive yet; skipping release publication."
+          fi
+
+      - name: Assemble committed prebuilt archive from Git chunks
+        if: steps.prebuilt.outputs.mode == 'committed-parts'
+        run: |
+          cat prebuilt/parts/omniroute-prebuilt.tar.gz.part-* > prebuilt/omniroute-prebuilt.tar.gz
+          sha256sum -c prebuilt/omniroute-prebuilt.tar.gz.sha256
+
+      - name: Build prebuilt archive (manual bootstrap only)
+        if: steps.prebuilt.outputs.mode == 'bootstrap'
+        run: bash scripts/create-prebuilt.sh
+        env:
+          JWT_SECRET: ci-build-secret-with-sufficient-length-for-validation
+          API_KEY_SECRET: ci-build-api-key-secret-with-sufficient-length-for-validation
+          NODE_OPTIONS: "--max-old-space-size=12288"
+          OMNIROUTE_BUILD_MEMORY_MB: "12288"
+          OMNIROUTE_USE_TURBOPACK: "0"
+
+      - name: Save bootstrap archive in canonical path
+        if: steps.prebuilt.outputs.mode == 'bootstrap'
+        run: |
+          mkdir -p prebuilt
+          cp dist/omniroute-prebuilt-*.tar.gz prebuilt/omniroute-prebuilt.tar.gz
+      - name: Validate committed prebuilt archive
+        if: steps.prebuilt.outputs.skip_release != 'true'
+        run: node scripts/check/check-committed-prebuilt.mjs
+
+      - name: Stage committed archive for this commit
+        if: steps.prebuilt.outputs.skip_release != 'true'
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          short_sha="$(git rev-parse --short HEAD)"
+          mkdir -p dist
+          cp prebuilt/omniroute-prebuilt.tar.gz "dist/omniroute-prebuilt-${version}-${short_sha}.tar.gz"
+
+      - name: Upload workflow artifact
+        if: steps.prebuilt.outputs.skip_release != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: omniroute-prebuilt
+          path: dist/omniroute-prebuilt-*.tar.gz
+          if-no-files-found: error
+
+      - name: Publish branch prebuilt release asset
+        if: steps.prebuilt.outputs.skip_release != 'true' && github.event_name == 'push' && github.ref == 'refs/heads/to/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          short_sha="$(git rev-parse --short HEAD)"
+          tag="prebuilt-${version}-${short_sha}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" dist/omniroute-prebuilt-*.tar.gz --clobber
+          else
+            gh release create "$tag" dist/omniroute-prebuilt-*.tar.gz \
+              --target "$GITHUB_SHA" \
+              --title "$tag" \
+              --notes "Prebuilt standalone OmniRoute archive."
+          fi
+
+      - name: Publish tag release asset
+        if: steps.prebuilt.outputs.skip_release != 'true' && startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" dist/omniroute-prebuilt-*.tar.gz --clobber
+          else
+            gh release create "$tag" dist/omniroute-prebuilt-*.tar.gz \
+              --title "$tag" \
+              --notes "Prebuilt standalone OmniRoute archive."
+          fi
+
+      - name: Upload manual release asset
+        if: steps.prebuilt.outputs.skip_release != 'true' && github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" dist/omniroute-prebuilt-*.tar.gz --clobber
