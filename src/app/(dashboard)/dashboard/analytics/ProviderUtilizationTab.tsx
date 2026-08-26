@@ -77,6 +77,8 @@ function getLatestPoints(points: ProviderUtilizationPoint[]) {
   return Array.from(latestByProvider.values()).sort((a, b) => b.remainingPct - a.remainingPct);
 }
 
+const REFRESH_INTERVAL_MS = 60_000;
+
 export default function ProviderUtilizationTab() {
   const t = useTranslations("analytics");
   const nodeMap = useProviderNodeMap();
@@ -131,9 +133,14 @@ export default function ProviderUtilizationTab() {
   useEffect(() => {
     const controller = new AbortController();
 
-    fetchUtilization(range, aggregateBy, controller.signal);
+    const refresh = () => fetchUtilization(range, aggregateBy, controller.signal);
+    refresh();
+    const interval = window.setInterval(refresh, REFRESH_INTERVAL_MS);
 
-    return () => controller.abort();
+    return () => {
+      window.clearInterval(interval);
+      controller.abort();
+    };
   }, [fetchUtilization, range, aggregateBy]);
 
   const providerColors = useMemo(() => {
@@ -340,12 +347,8 @@ export default function ProviderUtilizationTab() {
                           <ProviderIcon providerId={providerPart} size={22} />
                         </div>
                         <div>
-                          <p className="text-sm font-semibold text-text-main">
-                            {cardTitle}
-                          </p>
-                          <p className="text-xs text-text-muted">
-                            {cardSubtitle}
-                          </p>
+                          <p className="text-sm font-semibold text-text-main">{cardTitle}</p>
+                          <p className="text-xs text-text-muted">{cardSubtitle}</p>
                         </div>
                       </div>
                       <span

@@ -1082,12 +1082,14 @@ export async function syncAllProviderLimits(
   const cacheEntries: Array<{ connectionId: string; entry: ProviderLimitsCacheEntry }> = [];
   const caches: Record<string, ProviderLimitsCacheEntry> = {};
   const errors: Record<string, string> = {};
+  let completed = 0;
 
   const recordResult = (
     connectionId: string,
     result: PromiseSettledResult<{ connectionId: string; cache: ProviderLimitsCacheEntry }>
   ) => {
     if (result.status === "fulfilled") {
+      completed += 1;
       const { cache } = result.value;
       const previous = getProviderLimitsCache(connectionId);
       if (cache === previous) {
@@ -1147,8 +1149,8 @@ export async function syncAllProviderLimits(
 
   return {
     total: connections.length,
-    succeeded: cacheEntries.length,
-    failed: connections.length - cacheEntries.length,
+    succeeded: completed,
+    failed: connections.length - completed,
     caches,
     errors,
   };
