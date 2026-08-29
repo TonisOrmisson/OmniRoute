@@ -50,7 +50,7 @@ else
   # Never install the committed archive here: it may belong to an older commit.
   # Build the checked-out commit instead, so an upgrade cannot silently run stale code.
   echo "No prebuilt release asset for $EXPECTED_SHA; building the checked-out commit..."
-  npm ci --no-audit --no-fund
+  npm ci --include=optional --no-audit --no-fund
   npm run build:release
   pm2 restart omniroute --update-env
   pm2 save

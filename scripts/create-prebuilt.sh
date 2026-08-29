@@ -18,7 +18,8 @@ rm -f "$archive"
 
 # The release artifact is assembled by the same path used for npm publishing.
 # This keeps the PM2 deployment byte-for-byte aligned with the published CLI.
-npm ci --no-audit --no-fund
+# Webpack externalizes optional runtime packages, so make npm install them explicitly.
+npm ci --include=optional --no-audit --no-fund
 npm run build:release
 
 mkdir -p "$staging_dir"
