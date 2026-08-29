@@ -47,14 +47,23 @@ if PREBUILT_URL="$(
   echo "Installing prebuilt OmniRoute bundle from GitHub Release: $PREBUILT_URL"
   bash scripts/install-prebuilt.sh "$PREBUILT_URL"
 else
-  # Never install the committed archive here: it may belong to an older commit.
-  # Build the checked-out commit instead, so an upgrade cannot silently run stale code.
-  echo "No prebuilt release asset for $EXPECTED_SHA; building the checked-out commit..."
-  npm ci --include=optional --no-audit --no-fund
-  npm run build:release
-  pm2 restart omniroute --update-env
-  pm2 save
+  echo "No prebuilt release asset for commit $EXPECTED_SHA in $REPOSITORY." >&2
+  echo "Refusing to run npm install/build on production; wait for Build Prebuilt Standalone and retry." >&2
+  exit 1
 fi
+
+# The standalone bundle contains its runtime dependencies. Keep the source checkout
+# but remove build-time dependencies after PM2 has been restarted.
+pm2_path="$(command -v pm2 || true)"
+case "$pm2_path" in
+  "$PWD/node_modules/"*)
+    echo "Keeping node_modules because PM2 is installed locally: $pm2_path"
+    ;;
+  *)
+    rm -rf node_modules .build
+    echo "Removed build-time node_modules and .build; runtime is in dist/"
+    ;;
+esac
 
 read_env_value() {
   local name="$1"
