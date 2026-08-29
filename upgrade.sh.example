@@ -3,7 +3,13 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+# Production follows the fork deployment branch. The release/v3.8.50 branch is a
+# frozen upstream snapshot and must not be used for fork upgrades.
 BRANCH="${OMNIROUTE_DEPLOY_BRANCH:-to/main}"
+if [ "$BRANCH" = "release/v3.8.50" ]; then
+  echo "Ignoring stale OMNIROUTE_DEPLOY_BRANCH=release/v3.8.50; using to/main" >&2
+  BRANCH="to/main"
+fi
 REPOSITORY="${OMNIROUTE_GITHUB_REPOSITORY:-TonisOrmisson/OmniRoute}"
 
 git fetch origin "$BRANCH"
@@ -40,18 +46,14 @@ if PREBUILT_URL="$(
 )"; then
   echo "Installing prebuilt OmniRoute bundle from GitHub Release: $PREBUILT_URL"
   bash scripts/install-prebuilt.sh "$PREBUILT_URL"
-elif [ -f prebuilt/omniroute-prebuilt.tar.gz.sha256 ] && \
-  ls prebuilt/parts/omniroute-prebuilt.tar.gz.part-* >/dev/null 2>&1; then
-  echo "Assembling prebuilt OmniRoute bundle from committed parts..."
-  TMP_ARCHIVE="$(mktemp)"
-  trap 'rm -f "$TMP_ARCHIVE"' EXIT
-  cat prebuilt/parts/omniroute-prebuilt.tar.gz.part-* > "$TMP_ARCHIVE"
-  bash scripts/install-prebuilt.sh "$TMP_ARCHIVE"
 else
-  echo "No OmniRoute prebuilt release asset found for commit $EXPECTED_SHA in $REPOSITORY." >&2
-  echo "No committed prebuilt/parts/ found either." >&2
-  echo "Wait for the GitHub Actions 'Build Prebuilt Standalone' workflow to finish, then retry." >&2
-  exit 1
+  # Never install the committed archive here: it may belong to an older commit.
+  # Build the checked-out commit instead, so an upgrade cannot silently run stale code.
+  echo "No prebuilt release asset for $EXPECTED_SHA; building the checked-out commit..."
+  npm ci --no-audit --no-fund
+  npm run build:release
+  pm2 restart omniroute --update-env
+  pm2 save
 fi
 
 read_env_value() {
