@@ -73,6 +73,7 @@ jobs:
         run: |
           mkdir -p prebuilt
           cp dist/omniroute-prebuilt-*.tar.gz prebuilt/omniroute-prebuilt.tar.gz
+          sha256sum prebuilt/omniroute-prebuilt.tar.gz > prebuilt/omniroute-prebuilt.tar.gz.sha256
       - name: Validate committed prebuilt archive
         if: steps.prebuilt.outputs.skip_release != 'true'
         run: node scripts/check/check-committed-prebuilt.mjs
