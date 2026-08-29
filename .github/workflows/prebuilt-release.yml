@@ -38,8 +38,11 @@ jobs:
         id: prebuilt
         shell: bash
         run: |
-          if [ "${{ inputs.bootstrap_build }}" = "true" ]; then
-            echo "mode=bootstrap" >> "$GITHUB_OUTPUT"
+          if [ "${{ inputs.bootstrap_build }}" = "true" ] || \
+            { [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/to/main" ]; }; then
+            # Every deployable to/main commit needs an archive built from that exact
+            # source revision; committed chunks may belong to an older release.
+            echo "mode=build" >> "$GITHUB_OUTPUT"
           elif [ -f prebuilt/omniroute-prebuilt.tar.gz ]; then
             echo "mode=committed" >> "$GITHUB_OUTPUT"
           elif [ -f prebuilt/parts/omniroute-prebuilt.tar.gz.part-00 ]; then
@@ -55,8 +58,8 @@ jobs:
           cat prebuilt/parts/omniroute-prebuilt.tar.gz.part-* > prebuilt/omniroute-prebuilt.tar.gz
           sha256sum -c prebuilt/omniroute-prebuilt.tar.gz.sha256
 
-      - name: Build prebuilt archive (manual bootstrap only)
-        if: steps.prebuilt.outputs.mode == 'bootstrap'
+      - name: Build prebuilt archive from the checked-out commit
+        if: steps.prebuilt.outputs.mode == 'build'
         run: bash scripts/create-prebuilt.sh
         env:
           JWT_SECRET: ci-build-secret-with-sufficient-length-for-validation
@@ -65,8 +68,8 @@ jobs:
           OMNIROUTE_BUILD_MEMORY_MB: "12288"
           OMNIROUTE_USE_TURBOPACK: "0"
 
-      - name: Save bootstrap archive in canonical path
-        if: steps.prebuilt.outputs.mode == 'bootstrap'
+      - name: Save built archive in canonical path
+        if: steps.prebuilt.outputs.mode == 'build'
         run: |
           mkdir -p prebuilt
           cp dist/omniroute-prebuilt-*.tar.gz prebuilt/omniroute-prebuilt.tar.gz
