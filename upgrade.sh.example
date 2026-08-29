@@ -94,3 +94,11 @@ if [ "$ok" != "1" ]; then
 fi
 
 git status --short
+
+EXPECTED_VERSION="$(node -p "require('./package.json').version")"
+RUNNING_VERSION="$(node -p "require('./dist/package.json').version" 2>/dev/null || true)"
+if [ "$RUNNING_VERSION" != "$EXPECTED_VERSION" ]; then
+  echo "❌ Version check failed: source=$EXPECTED_VERSION, running=$RUNNING_VERSION" >&2
+  exit 1
+fi
+echo "✅ Version check passed: $RUNNING_VERSION"
