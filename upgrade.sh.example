@@ -16,41 +16,26 @@ git fetch origin "$BRANCH"
 git checkout "$BRANCH"
 git reset --hard "origin/$BRANCH"
 
-export EXPECTED_SHA="$(git rev-parse --short=7 HEAD)"
+EXPECTED_SHA="$(git rev-parse --short=7 HEAD)"
+EXPECTED_VERSION="$(node -p "require('./package.json').version")"
+PREBUILT_URL="https://github.com/$REPOSITORY/releases/download/prebuilt-$EXPECTED_VERSION-$EXPECTED_SHA/omniroute-prebuilt-$EXPECTED_VERSION-$EXPECTED_SHA.tar.gz"
 
-# Prefer a published GitHub Release asset (CI-built); fall back to the
-# committed prebuilt/parts/ archive which is already in the repo.
-PREBUILT_URL=""
-if PREBUILT_URL="$(
-  curl -fsSL "https://api.github.com/repos/$REPOSITORY/releases?per_page=20" |
-    node -e '
-      let source = "";
-      process.stdin.on("data", (chunk) => (source += chunk));
-      process.stdin.on("end", () => {
-        const releases = JSON.parse(source);
-        const expectedSha = process.env.EXPECTED_SHA;
-        for (const release of releases) {
-          const asset = (release.assets || []).find(
-            (candidate) =>
-              candidate.name.startsWith("omniroute-prebuilt-") &&
-              candidate.name.endsWith(`-${expectedSha}.tar.gz`)
-          );
-          if (asset) {
-            console.log(asset.browser_download_url);
-            return;
-          }
-        }
-        process.exit(1);
-      });
-    '
-)"; then
-  echo "Installing prebuilt OmniRoute bundle from GitHub Release: $PREBUILT_URL"
-  bash scripts/install-prebuilt.sh "$PREBUILT_URL"
-else
-  echo "No prebuilt release asset for commit $EXPECTED_SHA in $REPOSITORY." >&2
-  echo "Refusing to run npm install/build on production; wait for Build Prebuilt Standalone and retry." >&2
-  exit 1
-fi
+# CI may still be building the exact commit that was just fetched. Wait here so
+# one invocation completes the upgrade without installing dependencies on prod.
+for attempt in $(seq 1 45); do
+  if curl -fsIL "$PREBUILT_URL" >/dev/null; then
+    break
+  fi
+  if [ "$attempt" = "45" ]; then
+    echo "No prebuilt release asset for commit $EXPECTED_SHA after 45 minutes." >&2
+    exit 1
+  fi
+  echo "Waiting for prebuilt $EXPECTED_SHA ($attempt/45)..."
+  sleep 60
+done
+
+echo "Installing prebuilt OmniRoute bundle from GitHub Release: $PREBUILT_URL"
+bash scripts/install-prebuilt.sh "$PREBUILT_URL"
 
 # The standalone bundle contains its runtime dependencies. Keep the source checkout
 # but remove build-time dependencies after PM2 has been restarted.
@@ -104,7 +89,6 @@ fi
 
 git status --short
 
-EXPECTED_VERSION="$(node -p "require('./package.json').version")"
 RUNNING_VERSION="$(node -p "require('./dist/package.json').version" 2>/dev/null || true)"
 if [ "$RUNNING_VERSION" != "$EXPECTED_VERSION" ]; then
   echo "❌ Version check failed: source=$EXPECTED_VERSION, running=$RUNNING_VERSION" >&2
