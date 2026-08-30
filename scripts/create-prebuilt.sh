@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 version="$(node -p "require('./package.json').version")"
-sha="$(git rev-parse --short HEAD)"
+sha="$(git rev-parse --short=7 HEAD)"
 archive="${OMNIROUTE_PREBUILT_OUTPUT:-dist/omniroute-prebuilt-${version}-${sha}.tar.gz}"
 staging_dir="$(mktemp -d)"
 

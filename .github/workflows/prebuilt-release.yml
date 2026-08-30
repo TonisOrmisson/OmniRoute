@@ -82,7 +82,7 @@ jobs:
         if: steps.prebuilt.outputs.skip_release != 'true'
         run: |
           version="$(node -p "require('./package.json').version")"
-          short_sha="$(git rev-parse --short HEAD)"
+          short_sha="$(git rev-parse --short=7 HEAD)"
           mkdir -p dist
           cp prebuilt/omniroute-prebuilt.tar.gz "dist/omniroute-prebuilt-${version}-${short_sha}.tar.gz"
 
@@ -100,7 +100,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           version="$(node -p "require('./package.json').version")"
-          short_sha="$(git rev-parse --short HEAD)"
+          short_sha="$(git rev-parse --short=7 HEAD)"
           tag="prebuilt-${version}-${short_sha}"
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" dist/omniroute-prebuilt-*.tar.gz --clobber
