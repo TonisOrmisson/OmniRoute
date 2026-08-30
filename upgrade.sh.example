@@ -20,19 +20,53 @@ EXPECTED_SHA="$(git rev-parse --short=7 HEAD)"
 EXPECTED_VERSION="$(node -p "require('./package.json').version")"
 PREBUILT_URL="https://github.com/$REPOSITORY/releases/download/prebuilt-$EXPECTED_VERSION-$EXPECTED_SHA/omniroute-prebuilt-$EXPECTED_VERSION-$EXPECTED_SHA.tar.gz"
 
-# CI may still be building the exact commit that was just fetched. Wait here so
-# one invocation completes the upgrade without installing dependencies on prod.
-for attempt in $(seq 1 45); do
-  if curl -fsIL "$PREBUILT_URL" >/dev/null; then
-    break
+# Reuse the newest same-version artifact when every commit since it changed only
+# deployment machinery. Runtime/source changes still require an exact build.
+if ! curl -fsIL "$PREBUILT_URL" >/dev/null; then
+  candidate="$(
+    curl -fsSL "https://api.github.com/repos/$REPOSITORY/releases?per_page=20" |
+      node -e '
+        let source = "";
+        process.stdin.on("data", (chunk) => (source += chunk));
+        process.stdin.on("end", () => {
+          const version = process.argv[1];
+          const prefix = `omniroute-prebuilt-${version}-`;
+          for (const release of JSON.parse(source)) {
+            const asset = (release.assets || []).find(
+              ({ name }) => name.startsWith(prefix) && name.endsWith(".tar.gz")
+            );
+            if (asset) {
+              console.log(`${asset.name.slice(prefix.length, -7)}\t${asset.browser_download_url}`);
+              return;
+            }
+          }
+        });
+      ' "$EXPECTED_VERSION"
+  )" || true
+  IFS=$'\t' read -r candidate_sha candidate_url <<< "$candidate"
+  if [ -n "${candidate_sha:-}" ] && git cat-file -e "$candidate_sha^{commit}" 2>/dev/null &&
+    git diff --quiet "$candidate_sha"..HEAD -- . \
+      ':(exclude)upgrade.sh.example' \
+      ':(exclude).github/workflows/prebuilt-release.yml' \
+      ':(exclude)scripts/create-prebuilt.sh' \
+      ':(exclude)scripts/install-prebuilt.sh'; then
+    PREBUILT_URL="$candidate_url"
+    echo "Reusing compatible $EXPECTED_VERSION prebuilt from $candidate_sha"
+  else
+    # CI may still be building the exact commit that was just fetched.
+    for attempt in $(seq 1 45); do
+      if curl -fsIL "$PREBUILT_URL" >/dev/null; then
+        break
+      fi
+      if [ "$attempt" = "45" ]; then
+        echo "No prebuilt release asset for commit $EXPECTED_SHA after 45 minutes." >&2
+        exit 1
+      fi
+      echo "Waiting for prebuilt $EXPECTED_SHA ($attempt/45)..."
+      sleep 60
+    done
   fi
-  if [ "$attempt" = "45" ]; then
-    echo "No prebuilt release asset for commit $EXPECTED_SHA after 45 minutes." >&2
-    exit 1
-  fi
-  echo "Waiting for prebuilt $EXPECTED_SHA ($attempt/45)..."
-  sleep 60
-done
+fi
 
 echo "Installing prebuilt OmniRoute bundle from GitHub Release: $PREBUILT_URL"
 bash scripts/install-prebuilt.sh "$PREBUILT_URL"
