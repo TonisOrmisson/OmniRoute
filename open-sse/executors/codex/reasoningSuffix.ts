@@ -10,6 +10,7 @@ export const CODEX_EFFORT_ORDER = [
 export type CodexEffortLevel = (typeof CODEX_EFFORT_ORDER)[number];
 export const GPT_5_6_MAX_ALIAS_MODELS = new Set(["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]);
 export const GPT_5_6_ULTRA_ALIAS_MODELS = new Set(["gpt-5.6-sol", "gpt-5.6-terra"]);
+export const GPT_6_ALIAS_MODELS = new Set(["gpt-6-astra"]);
 
 export function splitCodexReasoningSuffix(model: unknown): {
   baseModel: string;
@@ -30,6 +31,11 @@ export function splitCodexReasoningSuffix(model: unknown): {
     if (supportedModels.has(baseModel)) {
       return { baseModel, effort: effort as CodexEffortLevel };
     }
+  }
+
+  const gpt6Match = /^(gpt-6-astra)-(max|ultra)$/.exec(modelId);
+  if (gpt6Match && GPT_6_ALIAS_MODELS.has(gpt6Match[1])) {
+    return { baseModel: gpt6Match[1], effort: gpt6Match[2] as CodexEffortLevel };
   }
 
   for (const effort of ["none", "low", "medium", "high", "xhigh"] as const) {

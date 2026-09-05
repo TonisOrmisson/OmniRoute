@@ -54,6 +54,7 @@ import { isCodexFreePlan, normalizeCodexTools } from "./codex/tools.ts";
 import {
   CODEX_EFFORT_ORDER as EFFORT_ORDER,
   GPT_5_6_ULTRA_ALIAS_MODELS,
+  GPT_6_ALIAS_MODELS,
   splitCodexReasoningSuffix,
   type CodexEffortLevel as EffortLevel,
 } from "./codex/reasoningSuffix.ts";
@@ -173,6 +174,7 @@ function isCodexResponsesLiteRequest(
 function isCodexDelegationDependentModel(model: unknown): boolean {
   const { baseModel, effort } = splitCodexReasoningSuffix(model);
   if (effort === "ultra" && GPT_5_6_ULTRA_ALIAS_MODELS.has(baseModel)) return true;
+  if (effort === "ultra" && GPT_6_ALIAS_MODELS.has(baseModel)) return true;
   if (effort === "max" && baseModel === "gpt-5.6-luna") return true;
   return false;
 }
@@ -329,6 +331,7 @@ function normalizeServiceTierValue(value: unknown): string | undefined {
  * Update this table when Codex releases new models with different caps.
  */
 const MAX_EFFORT_BY_MODEL: Record<string, EffortLevel> = {
+  "gpt-6-astra": "ultra",
   "gpt-5.6-sol": "ultra",
   "gpt-5.6-terra": "ultra",
   "gpt-5.6-luna": "max",

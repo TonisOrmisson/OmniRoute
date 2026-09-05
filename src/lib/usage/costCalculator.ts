@@ -101,6 +101,7 @@ export function getCodexFastCostMultiplier(
 
   const modelKey = stripCodexEffortSuffix(normalizeModelName(String(model || "")).toLowerCase());
   const compactModelKey = modelKey.replace(/-/g, "");
+  if (modelKey === "gpt-6-astra" || compactModelKey === "gpt6astra") return 2.5;
   if (
     /^gpt-5\.6-(?:sol|terra|luna)$/.test(modelKey) ||
     /^gpt5\.6(?:sol|terra|luna)$/.test(compactModelKey)
