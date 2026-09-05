@@ -137,6 +137,44 @@ export const codexProvider: RegistryEntry = {
       name: "GPT 5.6 Luna (Low)",
       ...GPT_5_6_CODEX_CAPABILITIES,
     },
+    // Astra shares GPT-5.6's live Codex limits and requires client version 0.153.4+.
+    {
+      id: "gpt-6-astra",
+      name: "GPT 6 Astra",
+      ...GPT_5_6_CODEX_CAPABILITIES,
+    },
+    {
+      id: "gpt-6-astra-ultra",
+      name: "GPT 6 Astra (Ultra)",
+      ...GPT_5_6_CODEX_CAPABILITIES,
+    },
+    {
+      id: "gpt-6-astra-max",
+      name: "GPT 6 Astra (Max)",
+      ...GPT_5_6_CODEX_CAPABILITIES,
+    },
+    {
+      id: "gpt-6-astra-xhigh",
+      name: "GPT 6 Astra (xHigh)",
+      ...GPT_5_6_CODEX_CAPABILITIES,
+      timeoutMs: 1200000,
+    },
+    {
+      id: "gpt-6-astra-high",
+      name: "GPT 6 Astra (High)",
+      ...GPT_5_6_CODEX_CAPABILITIES,
+      timeoutMs: 1200000,
+    },
+    {
+      id: "gpt-6-astra-medium",
+      name: "GPT 6 Astra (Medium)",
+      ...GPT_5_6_CODEX_CAPABILITIES,
+    },
+    {
+      id: "gpt-6-astra-low",
+      name: "GPT 6 Astra (Low)",
+      ...GPT_5_6_CODEX_CAPABILITIES,
+    },
     // gpt-5.5 codex OAuth backend caps context at 400K (not the public-API
     // 1.05M). Public refs : openai/codex#19208, #19319, #19464 ;
     // opencode#24171. max_output_tokens is stripped server-side
