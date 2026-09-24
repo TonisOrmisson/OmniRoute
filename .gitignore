@@ -122,6 +122,9 @@ app.log
 *.tgz
 .gh-discussions.json
 deploy.sh
+# Local production upgrade script and its pre-upgrade backups; keep upgrade.sh.example tracked.
+/upgrade.sh
+/upgrade.sh.before-*
 docker-compose.minimal.yml
 
 # Docker Compose override (local-only, never commit)
