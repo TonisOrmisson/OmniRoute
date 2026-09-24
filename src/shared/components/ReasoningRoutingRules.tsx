@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import { Button, Card, Input, Select, Toggle } from "@/shared/components";
+import { codexModelFamilySupportsExtendedEffort } from "@/shared/reasoning/codexExtendedEffort";
 
 type RuleScope = "global" | "apiKey" | "combo" | "model" | "connection";
 type TargetKind = "keep" | "model" | "combo";
@@ -83,16 +84,6 @@ function emptyRule(apiKeyId?: string): FormState {
   };
 }
 
-function supportsExtendedCodexEffort(model: string, effort: "max" | "ultra"): boolean {
-  const normalized = model
-    .trim()
-    .toLowerCase()
-    .replace(/^(?:codex|cx)\//, "");
-  return effort === "ultra"
-    ? /^gpt-5\.6-(?:sol|terra)(?:-|$)/.test(normalized)
-    : /^gpt-5\.6-(?:sol|terra|luna)(?:-|$)/.test(normalized);
-}
-
 export default function ReasoningRoutingRules({ apiKeyId }: { apiKeyId?: string }) {
   const t = useTranslations("reasoningRouting");
   const [rules, setRules] = useState<Rule[]>([]);
@@ -155,7 +146,10 @@ export default function ReasoningRoutingRules({ apiKeyId }: { apiKeyId?: string 
     const values = [...STANDARD_EFFORTS];
     for (const effort of EXTENDED_EFFORTS) {
       if (
-        supportsExtendedCodexEffort(targetModelForCapability, effort as "max" | "ultra") ||
+        codexModelFamilySupportsExtendedEffort(
+          targetModelForCapability,
+          effort as "max" | "ultra"
+        ) ||
         form.targetEffort === effort
       ) {
         values.push(effort);
@@ -169,7 +163,7 @@ export default function ReasoningRoutingRules({ apiKeyId }: { apiKeyId?: string 
     if (!EXTENDED_EFFORTS.includes(form.targetEffort)) return "";
     if (form.targetKind === "combo") return t("extendedComboWarning");
     if (!targetModelForCapability.trim()) return t("extendedUnknownWarning");
-    return supportsExtendedCodexEffort(
+    return codexModelFamilySupportsExtendedEffort(
       targetModelForCapability,
       form.targetEffort as "max" | "ultra"
     )

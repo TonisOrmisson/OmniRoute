@@ -1,0 +1,1 @@
+- Add GPT-6 Sol and Luna to the Codex catalog with their supported reasoning variants, pricing, Fast-mode cost estimates and VS Code effort metadata. Align reasoning-routing rules with the executor's supported Max/Ultra models. Ported from upstream PRs #14677 and #14720 by Quang Blue.

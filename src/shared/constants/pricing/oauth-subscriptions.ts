@@ -19,6 +19,23 @@ const ANTIGRAVITY_GEMINI_3_7_PRICING = {
   "gemini-3.7-flash-high": GEMINI_3_7_FLASH_PROMO_PRICING,
 };
 
+// Codex Standard: Sol 50 / 5 / 250 and Luna 2.5 / 0.25 / 12.5 credits per MTok,
+// converted at 25 credits per USD. https://developers.openai.com/codex/pricing
+const GPT_6_SOL_CODEX_PRICING = {
+  input: 2.0,
+  output: 10.0,
+  cached: 0.2,
+  reasoning: 10.0,
+  cache_creation: 2.5,
+};
+const GPT_6_LUNA_CODEX_PRICING = {
+  input: 0.1,
+  output: 0.5,
+  cached: 0.01,
+  reasoning: 0.5,
+  cache_creation: 0.125,
+};
+
 export const DEFAULT_PRICING_OAUTH = {
   cc: {
     "claude-fable-5": {
@@ -117,6 +134,19 @@ export const DEFAULT_PRICING_OAUTH = {
     "gpt-6-astra-high": GPT_6_ASTRA_PRICING,
     "gpt-6-astra-medium": GPT_6_ASTRA_PRICING,
     "gpt-6-astra-low": GPT_6_ASTRA_PRICING,
+    "gpt-6-sol": GPT_6_SOL_CODEX_PRICING,
+    "gpt-6-sol-ultra": GPT_6_SOL_CODEX_PRICING,
+    "gpt-6-sol-max": GPT_6_SOL_CODEX_PRICING,
+    "gpt-6-sol-xhigh": GPT_6_SOL_CODEX_PRICING,
+    "gpt-6-sol-high": GPT_6_SOL_CODEX_PRICING,
+    "gpt-6-sol-medium": GPT_6_SOL_CODEX_PRICING,
+    "gpt-6-sol-low": GPT_6_SOL_CODEX_PRICING,
+    "gpt-6-luna": GPT_6_LUNA_CODEX_PRICING,
+    "gpt-6-luna-max": GPT_6_LUNA_CODEX_PRICING,
+    "gpt-6-luna-xhigh": GPT_6_LUNA_CODEX_PRICING,
+    "gpt-6-luna-high": GPT_6_LUNA_CODEX_PRICING,
+    "gpt-6-luna-medium": GPT_6_LUNA_CODEX_PRICING,
+    "gpt-6-luna-low": GPT_6_LUNA_CODEX_PRICING,
     // GPT 5.5
     "gpt-5.5": GPT_5_5_PRICING,
     "gpt5.5": GPT_5_5_PRICING,

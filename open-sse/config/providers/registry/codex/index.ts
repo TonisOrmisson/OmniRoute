@@ -175,6 +175,40 @@ export const codexProvider: RegistryEntry = {
       name: "GPT 6 Astra (Low)",
       ...GPT_5_6_CODEX_CAPABILITIES,
     },
+    // Sol and Luna share Astra's Codex windows; Sol offers low..ultra, Luna low..max.
+    { id: "gpt-6-sol", name: "GPT 6 Sol", ...GPT_5_6_CODEX_CAPABILITIES },
+    { id: "gpt-6-sol-ultra", name: "GPT 6 Sol (Ultra)", ...GPT_5_6_CODEX_CAPABILITIES },
+    { id: "gpt-6-sol-max", name: "GPT 6 Sol (Max)", ...GPT_5_6_CODEX_CAPABILITIES },
+    {
+      id: "gpt-6-sol-xhigh",
+      name: "GPT 6 Sol (xHigh)",
+      ...GPT_5_6_CODEX_CAPABILITIES,
+      timeoutMs: 1200000,
+    },
+    {
+      id: "gpt-6-sol-high",
+      name: "GPT 6 Sol (High)",
+      ...GPT_5_6_CODEX_CAPABILITIES,
+      timeoutMs: 1200000,
+    },
+    { id: "gpt-6-sol-medium", name: "GPT 6 Sol (Medium)", ...GPT_5_6_CODEX_CAPABILITIES },
+    { id: "gpt-6-sol-low", name: "GPT 6 Sol (Low)", ...GPT_5_6_CODEX_CAPABILITIES },
+    { id: "gpt-6-luna", name: "GPT 6 Luna", ...GPT_5_6_CODEX_CAPABILITIES },
+    { id: "gpt-6-luna-max", name: "GPT 6 Luna (Max)", ...GPT_5_6_CODEX_CAPABILITIES },
+    {
+      id: "gpt-6-luna-xhigh",
+      name: "GPT 6 Luna (xHigh)",
+      ...GPT_5_6_CODEX_CAPABILITIES,
+      timeoutMs: 1200000,
+    },
+    {
+      id: "gpt-6-luna-high",
+      name: "GPT 6 Luna (High)",
+      ...GPT_5_6_CODEX_CAPABILITIES,
+      timeoutMs: 1200000,
+    },
+    { id: "gpt-6-luna-medium", name: "GPT 6 Luna (Medium)", ...GPT_5_6_CODEX_CAPABILITIES },
+    { id: "gpt-6-luna-low", name: "GPT 6 Luna (Low)", ...GPT_5_6_CODEX_CAPABILITIES },
     // gpt-5.5 codex OAuth backend caps context at 400K (not the public-API
     // 1.05M). Public refs : openai/codex#19208, #19319, #19464 ;
     // opencode#24171. max_output_tokens is stripped server-side

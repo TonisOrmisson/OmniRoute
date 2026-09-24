@@ -9,6 +9,10 @@ import {
 import { getResolvedModelCapabilities } from "@/lib/modelCapabilities";
 import { normalizeRoutingTags } from "@/domain/tagRouter";
 import { splitClaudeEffortSuffix } from "@omniroute/open-sse/config/providerModels.ts";
+import {
+  codexModelFamilySupportsExtendedEffort,
+  isCodexExtendedEffortBaseModel,
+} from "@/shared/reasoning/codexExtendedEffort";
 
 type JsonRecord = Record<string, unknown>;
 const EFFORTS = new Set<ReasoningEffort>([
@@ -76,8 +80,9 @@ function splitGenericEffortSuffix(model: string): {
 }
 
 function supportsCodexSuffix(candidate: string, normalizedBase: string): boolean {
-  if (candidate === "max") return /^gpt-5\.6-(?:sol|terra|luna)$/.test(normalizedBase);
-  if (candidate === "ultra") return /^gpt-5\.6-(?:sol|terra)$/.test(normalizedBase);
+  if (candidate === "max" || candidate === "ultra") {
+    return isCodexExtendedEffortBaseModel(normalizedBase, candidate);
+  }
   return true;
 }
 
@@ -264,12 +269,7 @@ function capabilityFor(
   const capabilities = getResolvedModelCapabilities(model);
   if (capabilities.supportsThinking === false) return "unsupported" as const;
   if (targetEffort === "max" || targetEffort === "ultra") {
-    const normalized = model.toLowerCase().replace(/^(?:codex|cx)\//, "");
-    const supported =
-      targetEffort === "ultra"
-        ? /^gpt-5\.6-(?:sol|terra)(?:-|$)/.test(normalized)
-        : /^gpt-5\.6-(?:sol|terra|luna)(?:-|$)/.test(normalized);
-    if (supported) return "supported" as const;
+    if (codexModelFamilySupportsExtendedEffort(model, targetEffort)) return "supported" as const;
     if (capabilities.supportsThinking === null) return "unknown" as const;
     return "unsupported" as const;
   }
