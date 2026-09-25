@@ -30,6 +30,13 @@ function fixture(t, options = {}) {
     FAIL_HEALTH: options.failHealth ? "1" : "0",
     FAIL_START: options.failStart ? "1" : "0",
     FAIL_DOWNLOAD: options.failDownload ? "1" : "0",
+    PUBLIC_ONLY: options.publicOnly ? "1" : "0",
+    STALE_PROCESS: options.staleProcess ? "1" : "0",
+    WRONG_PROCESS_SHA: options.wrongProcessSha ? "1" : "0",
+    WRONG_PROCESS_PATH: options.wrongProcessPath ? "1" : "0",
+    STALE_HTTP_SHA: options.staleHttpSha ? "1" : "0",
+    FLAP_DURING_HEALTH: options.flapDuringHealth ? "1" : "0",
+    OMNIROUTE_HEALTH_URL: options.healthUrl || "",
   };
   function run(command, args, cwd = repo) {
     const result = spawnSync(command, args, { cwd, env, encoding: "utf8", timeout: 15000 });
@@ -86,7 +93,11 @@ function fixture(t, options = {}) {
   fs.mkdirSync(path.join(repo, "dist"));
   fs.writeFileSync(path.join(repo, "dist/BUILD_SHA"), "previous-build\n");
   fs.writeFileSync(path.join(repo, "dist/package.json"), JSON.stringify({ version: "3.8.50" }));
-  fs.writeFileSync(path.join(repo, ".env"), "PORT=21001\nDASHBOARD_PORT=21002\n");
+  fs.writeFileSync(
+    path.join(repo, ".env"),
+    "PORT=21001\nDASHBOARD_PORT=21002\n" +
+      (options.envHealthUrl ? `OMNIROUTE_HEALTH_URL="${options.envHealthUrl}"\n` : "")
+  );
   fs.copyFileSync(path.join(root, "upgrade.sh.example"), path.join(repo, "upgrade.sh"));
   const shim = (name, content) => fs.writeFileSync(path.join(bin, name), content, { mode: 0o755 });
   shim(
@@ -99,7 +110,15 @@ const dir = process.env.FIXTURE_DIR;
 const url = args.find(a => /^https?:/.test(a));
 fs.appendFileSync(path.join(dir, "curl.log"), url + "\\n");
 if (url.includes("/api/monitoring/health")) {
-  console.log(JSON.stringify({status: process.env.FAIL_HEALTH === "1" ? "unhealthy" : "healthy"}));
+  if (process.env.PUBLIC_ONLY === "1" && url.startsWith("http://127.0.0.1")) process.exit(7);
+  if (process.env.FLAP_DURING_HEALTH === "1") {
+    const stateFile = path.join(dir, "pm2-state.json");
+    const apps = JSON.parse(fs.readFileSync(stateFile));
+    apps[0].pid += 1;
+    fs.writeFileSync(stateFile, JSON.stringify(apps));
+  }
+  console.log(JSON.stringify({status: process.env.FAIL_HEALTH === "1" ? "unhealthy" : "healthy",
+    ...(process.env.STALE_HTTP_SHA === "1" ? {buildSha: "deadbee"} : {})}));
 } else {
   if (url.includes("/download/") && process.env.FAIL_DOWNLOAD === "1") process.exit(22);
   const source = path.join(dir, url.includes("api.github.com") ? "release.json" : "bundle.tar.gz");
@@ -120,6 +139,21 @@ fs.appendFileSync(path.join(dir, "pm2.log"), args.join(" ") + "\\n");
 if (args[0] === "start" && process.env.FAIL_START === "1") {
   const marker = path.join(dir, "start-failed");
   if (!fs.existsSync(marker)) { fs.writeFileSync(marker, "1"); process.exit(1); }
+}
+const stateFile = path.join(dir, "pm2-state.json");
+const initial = [{name: "omniroute", pid: 100, pm2_env: {status: "online", pm_uptime: 1}}];
+if (args[0] === "start") {
+  const dist = path.join(process.cwd(), "dist");
+  fs.writeFileSync(stateFile, JSON.stringify([{name: "omniroute",
+    pid: process.env.STALE_PROCESS === "1" ? 100 : 101,
+    pm2_env: {status: "online", pm_uptime: Date.now(),
+      pm_cwd: dist,
+      pm_exec_path: path.join(process.env.WRONG_PROCESS_PATH === "1" ? dir : dist, "server.js"),
+      OMNIROUTE_BUILD_SHA: process.env.WRONG_PROCESS_SHA === "1" ? "deadbee" : process.env.OMNIROUTE_BUILD_SHA,
+    }}]));
+}
+if (args[0] === "jlist") {
+  process.stdout.write(fs.existsSync(stateFile) ? fs.readFileSync(stateFile) : JSON.stringify(initial));
 }
 `
   );
@@ -202,6 +236,56 @@ for (const [name, options] of [
     assert.equal(calls.match(/^start /gm)?.length, 2, "restart the old bundle on rollback");
   });
 }
+
+test("shared hosting uses the configured public endpoint instead of loopback", (t) => {
+  const f = fixture(t, {
+    publicOnly: true,
+    envHealthUrl: "https://r.flomta.eu/api/monitoring/health",
+  });
+  const result = f.upgrade("sh");
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  assert.equal(fs.readFileSync(path.join(f.repo, "dist/BUILD_SHA"), "utf8").trim(), f.sha);
+  const calls = fs.readFileSync(path.join(f.dir, "curl.log"), "utf8");
+  assert.ok(calls.includes("https://r.flomta.eu/api/monitoring/health?"));
+  assert.ok(!calls.includes("127.0.0.1"));
+});
+
+test("health URL environment override wins over .env", (t) => {
+  const f = fixture(t, {
+    publicOnly: true,
+    healthUrl: "https://r.flomta.eu/api/monitoring/health",
+    envHealthUrl: "http://127.0.0.1:1/api/monitoring/health",
+  });
+  assert.equal(f.upgrade().status, 0);
+});
+
+for (const [name, options] of [
+  ["old PID", { staleProcess: true }],
+  ["wrong process build", { wrongProcessSha: true }],
+  ["wrong process path", { wrongProcessPath: true }],
+  ["stale HTTP build", { staleHttpSha: true }],
+  ["process restart during the probe", { flapDuringHealth: true }],
+]) {
+  test(`HTTP 200 cannot hide ${name}; rollback is explicit`, (t) => {
+    const f = fixture(t, { ...options, healthUrl: "https://r.flomta.eu/api/monitoring/health" });
+    const result = f.upgrade();
+    assert.notEqual(result.status, 0, result.stdout);
+    unchanged(f);
+    assert.match(result.stderr, /UPGRADE FAILED.*previous-build/);
+    assert.ok(!result.stdout.includes("Upgrade complete"));
+    if (!options.wrongProcessSha) {
+      const restored = JSON.parse(fs.readFileSync(path.join(f.dir, "pm2-state.json")));
+      assert.equal(restored[0].pm2_env.OMNIROUTE_BUILD_SHA, "previous-build");
+    }
+  });
+}
+
+test("invalid health URL is rejected before changing the deployment", (t) => {
+  const f = fixture(t, { healthUrl: "file:///etc/passwd" });
+  assert.notEqual(f.upgrade().status, 0);
+  unchanged(f);
+  assert.ok(!fs.existsSync(path.join(f.dir, "pm2.log")));
+});
 
 test("upgrade refuses to discard tracked local edits", (t) => {
   const f = fixture(t);

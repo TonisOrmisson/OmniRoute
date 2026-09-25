@@ -19,6 +19,10 @@ exec 9>"$(git rev-parse --git-path omniroute-upgrade.lock)"
 flock -n 9 || { echo "Another upgrade is running." >&2; exit 1; }
 
 previous_ref="$(git symbolic-ref --quiet --short HEAD || git rev-parse HEAD)"
+previous_build_sha=""
+if [ -f dist/BUILD_SHA ]; then
+  read -r previous_build_sha < dist/BUILD_SHA || true
+fi
 # Same filesystem as dist/, so retaining/restoring the old bundle is a rename.
 mkdir -p .tmp
 tmp_dir="$(mktemp -d "$PWD/.tmp/upgrade.XXXXXX")"
@@ -43,10 +47,13 @@ cleanup() {
       git checkout "$previous_ref" || { echo "Restore checkout manually; files retained at $tmp_dir" >&2; exit 1; }
     fi
     if [ "$install_started" = 1 ] && [ -d dist ]; then
-      pm2 start ecosystem.config.cjs --update-env 9>&- && pm2 save 9>&- || {
+      OMNIROUTE_BUILD_SHA="$previous_build_sha" pm2 start ecosystem.config.cjs --update-env 9>&- && pm2 save 9>&- || {
         echo "Previous bundle restored, but PM2 restart failed; inspect $tmp_dir" >&2
         exit 1
       }
+    fi
+    if [ "$install_started" = 1 ]; then
+      echo "UPGRADE FAILED. Restored bundle: ${previous_build_sha:-none}. Target $EXPECTED_SHA was NOT kept installed." >&2
     fi
   fi
   rm -rf "$tmp_dir"
@@ -55,6 +62,33 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+
+read_env_value() {
+  local name="$1"
+  if [ ! -f .env ]; then return 0; fi
+  sed -n "s/^[[:space:]]*${name}[[:space:]]*=[[:space:]]*//p" .env |
+    head -n 1 |
+    sed -e 's/\r$//' -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//"
+}
+HEALTH_PORT="${OMNIROUTE_DASHBOARD_PORT:-${DASHBOARD_PORT:-}}"
+HEALTH_PORT="${HEALTH_PORT:-$(read_env_value OMNIROUTE_DASHBOARD_PORT)}"
+HEALTH_PORT="${HEALTH_PORT:-$(read_env_value DASHBOARD_PORT)}"
+HEALTH_PORT="${HEALTH_PORT:-${OMNIROUTE_PORT:-${PORT:-}}}"
+HEALTH_PORT="${HEALTH_PORT:-$(read_env_value OMNIROUTE_PORT)}"
+HEALTH_PORT="${HEALTH_PORT:-$(read_env_value PORT)}"
+HEALTH_PORT="${HEALTH_PORT:-20128}"
+# Shared hosting: set this in .env to the public URL that routes to this PM2 app,
+# e.g. OMNIROUTE_HEALTH_URL=https://r.flomta.eu/api/monitoring/health
+HEALTH_URL="${OMNIROUTE_HEALTH_URL:-$(read_env_value OMNIROUTE_HEALTH_URL)}"
+HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:${HEALTH_PORT}/api/monitoring/health}"
+HEALTH_URL="$(node -e '
+  try {
+    const url = new URL(process.argv[1]);
+    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.hash) throw 0;
+    url.searchParams.set("omniroute_upgrade", require("node:crypto").randomUUID());
+    console.log(url.href);
+  } catch { console.error("Invalid OMNIROUTE_HEALTH_URL: use an HTTP(S) health endpoint without credentials or fragment."); process.exit(1); }
+' "$HEALTH_URL")"
 
 curl -fsSL --connect-timeout 15 --max-time 60 \
   "https://api.github.com/repos/$REPOSITORY/releases/latest" -o "$tmp_dir/release.json"
@@ -99,6 +133,19 @@ if (!/^[0-9a-f]{7,40}$/.test(sha) || !commit.startsWith(sha) || pkg.version !== 
 }
 NODE
 
+# Read the old PID only after all download/metadata checks passed.
+previous_pid="$(pm2 jlist 9>&- | node -e '
+  let s = ""; process.stdin.on("data", c => s += c); process.stdin.on("end", () => {
+    try { const apps = JSON.parse(s).filter(p => p.name === "omniroute");
+      if (apps.length > 1) throw 0;
+      const pid = apps[0]?.pid ?? 0;
+      if (!Number.isSafeInteger(pid) || pid < 0) throw 0;
+      console.log(pid);
+    } catch { console.error("Cannot read PM2 state; deployment unchanged."); process.exit(1); }
+  });
+')"
+started_ms="$(node -p 'Date.now()')"
+
 # Pin the source checkout to the same release. Never reset a deployment branch.
 git checkout --detach "$release_commit"
 checkout_changed=1
@@ -107,33 +154,50 @@ if [ -e dist ]; then
 fi
 install_started=1
 # Do not let the PM2 daemon inherit the upgrade lock.
-bash scripts/install-prebuilt.sh "$archive" 9>&-
+OMNIROUTE_BUILD_SHA="$release_commit" bash scripts/install-prebuilt.sh "$archive" 9>&-
 
-read_env_value() {
-  local name="$1"
-  if [ ! -f .env ]; then
-    return 0
-  fi
-  sed -n "s/^[[:space:]]*${name}[[:space:]]*=[[:space:]]*//p" .env |
-    head -n 1 |
-    sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//"
+# Public health hides build identity. Correlate it with a fresh, correctly bound
+# PM2 process before AND after the HTTP probe; HTTP 200 alone is not success.
+running_instance() {
+  pm2 jlist 9>&- | node -e '
+    const fs = require("node:fs"), path = require("node:path");
+    const [commit, oldPid, started, dir] = process.argv.slice(1);
+    let s = ""; process.stdin.on("data", c => s += c); process.stdin.on("end", () => {
+      try {
+        const apps = JSON.parse(s).filter(p => p.name === "omniroute");
+        if (apps.length !== 1) throw 0;
+        const p = apps[0], e = p.pm2_env;
+        const dist = fs.realpathSync(dir);
+        const entry = path.join(dist, fs.existsSync(path.join(dist, "server-ws.mjs")) ? "server-ws.mjs" : "server.js");
+        const sha = fs.readFileSync(path.join(dist, "BUILD_SHA"), "utf8").trim();
+        if (!/^[0-9a-f]{7,40}$/.test(sha) || !commit.startsWith(sha) ||
+            !Number.isSafeInteger(p.pid) || p.pid <= 0 || String(p.pid) === oldPid ||
+            e.status !== "online" || !Number.isFinite(e.pm_uptime) || e.pm_uptime < Number(started) ||
+            e.OMNIROUTE_BUILD_SHA !== commit || fs.realpathSync(e.pm_cwd) !== dist ||
+            fs.realpathSync(e.pm_exec_path) !== entry) throw 0;
+        console.log(`${p.pid}:${e.pm_uptime}`);
+      } catch { console.error("PM2 process/build verification failed (PID, startup time, path or SHA)."); process.exit(1); }
+    });
+  ' "$release_commit" "$previous_pid" "$started_ms" "$PWD/dist"
 }
-HEALTH_PORT="${OMNIROUTE_DASHBOARD_PORT:-${DASHBOARD_PORT:-}}"
-HEALTH_PORT="${HEALTH_PORT:-$(read_env_value OMNIROUTE_DASHBOARD_PORT)}"
-HEALTH_PORT="${HEALTH_PORT:-$(read_env_value DASHBOARD_PORT)}"
-HEALTH_PORT="${HEALTH_PORT:-${OMNIROUTE_PORT:-${PORT:-}}}"
-HEALTH_PORT="${HEALTH_PORT:-$(read_env_value OMNIROUTE_PORT)}"
-HEALTH_PORT="${HEALTH_PORT:-$(read_env_value PORT)}"
-HEALTH_PORT="${HEALTH_PORT:-20128}"
 
+echo "Verifying installed build $EXPECTED_SHA via ${HEALTH_URL%%\?*} and fresh PM2 process..."
 for attempt in $(seq 1 36); do
-  if curl -fsS -m 5 "http://127.0.0.1:${HEALTH_PORT}/api/monitoring/health" |
-    node -e 'let s=""; process.stdin.on("data", c => s += c); process.stdin.on("end", () => { try { process.exit(JSON.parse(s).status === "healthy" ? 0 : 1); } catch { process.exit(1); } });'; then
+  if instance="$(running_instance)" &&
+    curl -fsS -m 5 -H "Cache-Control: no-cache" "$HEALTH_URL" |
+      node -e 'let s=""; process.stdin.on("data", c => s += c); process.stdin.on("end", () => {
+        try {
+          const b=JSON.parse(s), sha=b.buildSha;
+          const matches=sha==null || (typeof sha==="string" && /^[0-9a-f]{7,40}$/.test(sha) && process.argv[1].startsWith(sha));
+          process.exit(["healthy", "ok"].includes(b.status) && matches ? 0 : 1);
+        } catch { process.exit(1); }
+      });' "$release_commit" &&
+    [ "$instance" = "$(running_instance)" ]; then
     echo "Upgrade complete: $RELEASE_TAG (version $EXPECTED_VERSION, build $EXPECTED_SHA)"
     exit 0
   fi
-  echo "Not healthy yet (attempt $attempt/36), retrying in 5s"
+  echo "Not ready yet (attempt $attempt/36), retrying in 5s"
   sleep 5
 done
-echo "Health check failed." >&2
+echo "Readiness check failed for build $EXPECTED_SHA at ${HEALTH_URL%%\?*}." >&2
 exit 1
