@@ -28,6 +28,7 @@ export type CodexDiscoveryModel = {
   outputTokenLimit?: number;
   description?: string;
   supportsThinking?: boolean;
+  supportedThinkingEfforts?: string[];
   supportsVision?: boolean;
 };
 
@@ -150,6 +151,20 @@ function recordSupportsVision(record: JsonRecord): boolean {
   return Array.isArray(record.input_modalities) && record.input_modalities.some(isImageModality);
 }
 
+function reasoningEffortValue(entry: unknown): string | null {
+  if (typeof entry === "string") return toNonEmptyString(entry);
+  const effort = asRecord(entry).effort;
+  return typeof effort === "string" ? toNonEmptyString(effort) : null;
+}
+
+function supportedThinkingEfforts(record: JsonRecord): string[] | undefined {
+  if (!Array.isArray(record.supported_reasoning_levels)) return undefined;
+  const efforts = record.supported_reasoning_levels
+    .map(reasoningEffortValue)
+    .filter((effort): effort is string => effort !== null);
+  return efforts.length > 0 ? efforts : undefined;
+}
+
 function buildCodexDiscoveryModel(record: JsonRecord): CodexDiscoveryModel | null {
   if (!shouldImportCodexModel(record)) return null;
 
@@ -198,6 +213,8 @@ function buildCodexDiscoveryModel(record: JsonRecord): CodexDiscoveryModel | nul
   if (typeof outputTokenLimit === "number") model.outputTokenLimit = outputTokenLimit;
   if (description) model.description = description;
   if (recordSupportsThinking(record)) model.supportsThinking = true;
+  const efforts = supportedThinkingEfforts(record);
+  if (efforts) model.supportedThinkingEfforts = efforts;
   if (recordSupportsVision(record)) model.supportsVision = true;
 
   return model;

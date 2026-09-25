@@ -11,6 +11,11 @@ const core = await import("../../src/lib/db/core.ts");
 const modelsDb = await import("../../src/lib/db/models.ts");
 const providersDb = await import("../../src/lib/db/providers.ts");
 const { getModelInfoCore } = await import("../../open-sse/services/model.ts");
+const { getModelInfo } = await import("../../src/sse/services/model.ts");
+const { splitCodexReasoningSuffix } =
+  await import("../../open-sse/executors/codex/reasoningSuffix.ts");
+const { normalizeCodexModelsResponse } =
+  await import("../../src/app/api/providers/[id]/models/discovery/codex.ts");
 
 type TestProvider = "anthropic" | "codex" | "openai";
 
@@ -53,6 +58,35 @@ test.beforeEach(() => {
 test.after(() => {
   core.resetDbInstance();
   fs.rmSync(TEST_DATA_DIR, { recursive: true, force: true });
+});
+
+test("refreshing a stale Codex catalog enables GPT-6 and preserves live reasoning tiers", async () => {
+  const connection = await seedSyncedModel("codex", GPT_56_CODEX_MODEL);
+  const before = await getModelInfo("codex/gpt-6-luna");
+  assert.equal(before.errorType, "model_not_found");
+
+  const discovered = normalizeCodexModelsResponse({
+    models: ["gpt-6-luna", "gpt-6-sol"].map((slug) => ({
+      slug,
+      supported_reasoning_levels: [{ effort: "low" }, { effort: "medium" }, { effort: "max" }],
+    })),
+  });
+  await modelsDb.replaceSyncedAvailableModelsForConnection(
+    "codex",
+    String(connection.id),
+    discovered
+  );
+  for (const model of ["gpt-6-luna", "gpt-6-sol"]) {
+    const base = await getModelInfo(`codex/${model}`);
+    assert.equal(base.provider, "codex");
+    assert.equal(base.model, model);
+    assert.deepEqual(base.supportedThinkingEfforts, ["low", "medium", "max"]);
+    const low = await getModelInfo(`codex/${model}-low`);
+    assert.equal(low.provider, "codex");
+    // Codex keeps its alias until the executor's provider-specific suffix parser.
+    assert.equal(low.model, `${model}-low`);
+    assert.deepEqual(splitCodexReasoningSuffix(low.model), { baseModel: model, effort: "low" });
+  }
 });
 
 test("bare GPT-5.6 model routes through Codex when it is the only active provider", async () => {
