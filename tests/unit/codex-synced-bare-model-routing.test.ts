@@ -62,11 +62,14 @@ test.after(() => {
 
 test("refreshing a stale Codex catalog enables GPT-6 and preserves live reasoning tiers", async () => {
   const connection = await seedSyncedModel("codex", GPT_56_CODEX_MODEL);
-  const before = await getModelInfo("codex/gpt-6-luna");
-  assert.equal(before.errorType, "model_not_found");
+  const modelIds = ["gpt-6-luna", "gpt-6-sol", "gpt-6.1-sol"];
+  for (const model of modelIds) {
+    const before = await getModelInfo(`codex/${model}`);
+    assert.equal(before.errorType, "model_not_found");
+  }
 
   const discovered = normalizeCodexModelsResponse({
-    models: ["gpt-6-luna", "gpt-6-sol"].map((slug) => ({
+    models: modelIds.map((slug) => ({
       slug,
       supported_reasoning_levels: [{ effort: "low" }, { effort: "medium" }, { effort: "max" }],
     })),
@@ -76,16 +79,18 @@ test("refreshing a stale Codex catalog enables GPT-6 and preserves live reasonin
     String(connection.id),
     discovered
   );
-  for (const model of ["gpt-6-luna", "gpt-6-sol"]) {
+  for (const model of modelIds) {
     const base = await getModelInfo(`codex/${model}`);
     assert.equal(base.provider, "codex");
     assert.equal(base.model, model);
     assert.deepEqual(base.supportedThinkingEfforts, ["low", "medium", "max"]);
-    const low = await getModelInfo(`codex/${model}-low`);
-    assert.equal(low.provider, "codex");
-    // Codex keeps its alias until the executor's provider-specific suffix parser.
-    assert.equal(low.model, `${model}-low`);
-    assert.deepEqual(splitCodexReasoningSuffix(low.model), { baseModel: model, effort: "low" });
+    for (const effort of ["low", "max"]) {
+      const alias = await getModelInfo(`codex/${model}-${effort}`);
+      assert.equal(alias.provider, "codex");
+      // Codex keeps its alias until the executor's provider-specific suffix parser.
+      assert.equal(alias.model, `${model}-${effort}`);
+      assert.deepEqual(splitCodexReasoningSuffix(alias.model), { baseModel: model, effort });
+    }
   }
 });
 
