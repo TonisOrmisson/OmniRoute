@@ -70,8 +70,9 @@ test("Responses Lite must not strip parallel_tool_calls for GPT-5.6 luna max-tie
   assert.equal(capturedBodies[0].parallel_tool_calls, true);
 });
 
-test("Responses Lite must not strip parallel_tool_calls for GPT-6 Astra ultra delegation", async () => {
+test("Responses Lite preserves parallel tool calls for Astra ultra delegation", async () => {
   const capturedBodies = await runLiteRequest("gpt-6-astra-ultra");
+  assert.equal(capturedBodies.length, 1);
   assert.equal(capturedBodies[0].parallel_tool_calls, true);
 });
 

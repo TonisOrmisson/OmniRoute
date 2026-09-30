@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { cleanupTempDataDir } from "../_setup/tempDataDir.ts";
 
 // Reasoning-routing rules decided which Codex models accept `max` / `ultra` with a
 // hard-coded gpt-5.6 regex, so GPT-6 models the Codex executor already serves at
@@ -84,9 +85,9 @@ async function removedFromCombo(models: string[], targetEffort: "max" | "ultra")
 
 test.beforeEach(resetStorage);
 
-test.after(() => {
-  core.resetDbInstance();
-  fs.rmSync(TEST_DATA_DIR, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+test.after(async () => {
+  resetStorage();
+  await cleanupTempDataDir(TEST_DATA_DIR);
 });
 
 test("forced max keeps GPT-6 Astra in a Codex combo", async () => {

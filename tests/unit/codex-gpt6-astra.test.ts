@@ -5,6 +5,7 @@ import {
   getCodexClientVersion,
   getCodexDefaultHeaders,
 } from "../../open-sse/config/codexClient.ts";
+import { DEFAULT_CODEX_CLIENT_VERSION } from "../../src/shared/constants/codexClient.ts";
 import { getModelsByProviderId } from "../../open-sse/config/providerModels.ts";
 import { CodexExecutor } from "../../open-sse/executors/codex.ts";
 import { getCodexFastCostMultiplier } from "../../src/lib/usage/costCalculator.ts";
@@ -38,8 +39,8 @@ test("Codex exposes GPT-6 Astra with the accepted client identity and limits", (
   assert.equal(openaiModel.contextLength, 1050000);
   assert.ok(openaiModel.unsupportedParams?.includes("temperature"));
 
-  assert.equal(getCodexClientVersion(), "0.155.0");
-  assert.equal(getCodexDefaultHeaders().Version, "0.155.0");
+  assert.equal(getCodexClientVersion(), DEFAULT_CODEX_CLIENT_VERSION);
+  assert.equal(getCodexDefaultHeaders().Version, DEFAULT_CODEX_CLIENT_VERSION);
 });
 
 test("Codex maps GPT-6 Astra ultra to the upstream max effort", () => {
