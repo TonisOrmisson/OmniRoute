@@ -22,6 +22,12 @@ import {
   resetCcrStore,
 } from "../../../open-sse/services/compression/engines/ccr/index.ts";
 
+test.after(async () => {
+  const { resetDbInstance } = await import("../../../src/lib/db/core.ts");
+  resetDbInstance();
+  resetCcrStore();
+});
+
 // A fake key→metadata lookup: maps a raw key to a DB-row id, exactly like getApiKeyMetadata.
 const fakeLookup = (map: Record<string, string>) => async (rawKey: string) =>
   map[rawKey] ? { id: map[rawKey] } : null;
@@ -104,12 +110,15 @@ test("#5649 end-to-end: a block stored under the api-key id is retrievable by th
 
 test("#7883 resolveMcpCallerApiKeyId returns undefined when both headers and env var are absent", async () => {
   const prev = process.env.OMNIROUTE_API_KEY;
+  const prevRouterKey = process.env.ROUTER_API_KEY;
   delete process.env.OMNIROUTE_API_KEY;
+  delete process.env.ROUTER_API_KEY;
   try {
     const result = await resolveMcpCallerApiKeyId();
     assert.equal(result, undefined);
   } finally {
-    if (prev) process.env.OMNIROUTE_API_KEY = prev;
+    if (prev !== undefined) process.env.OMNIROUTE_API_KEY = prev;
+    if (prevRouterKey !== undefined) process.env.ROUTER_API_KEY = prevRouterKey;
   }
 });
 
