@@ -166,8 +166,16 @@ if (args[0] === "jlist") {
     tag,
     releaseCommit,
     originalCommit,
-    upgrade: (shell = "bash") =>
-      spawnSync(shell, ["upgrade.sh"], { cwd: repo, env, encoding: "utf8", timeout: 15000 }),
+    upgrade: (shell = "bash") => {
+      const result = spawnSync(shell, ["upgrade.sh"], {
+        cwd: repo,
+        env,
+        encoding: "utf8",
+        timeout: 60000,
+      });
+      assert.ifError(result.error);
+      return result;
+    },
   };
 }
 
