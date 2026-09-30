@@ -3,7 +3,17 @@ import assert from "node:assert/strict";
 
 function withEnv(vars: Record<string, string | undefined>, fn: () => void) {
   const saved: Record<string, string | undefined> = {};
-  for (const [k, v] of Object.entries(vars)) {
+  for (const [k, v] of Object.entries({
+    CODESPACES: undefined,
+    GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN: undefined,
+    WSL_DISTRO_NAME: undefined,
+    WSL_INTEROP: undefined,
+    GITPOD_WORKSPACE_ID: undefined,
+    REPL_ID: undefined,
+    REPL_SLUG: undefined,
+    CI: undefined,
+    ...vars,
+  })) {
     saved[k] = process.env[k];
     if (v === undefined) delete process.env[k];
     else process.env[k] = v;
